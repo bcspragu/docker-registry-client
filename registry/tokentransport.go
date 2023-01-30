@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 type TokenTransport struct {
-	Transport http.RoundTripper
-	Username  string
-	Password  string
+	Transport    http.RoundTripper
+	Username     string
+	Password     string
+	Replacements map[string]string
 }
 
 func (t *TokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -18,7 +20,7 @@ func (t *TokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return resp, err
 	}
-	if authService := isTokenDemand(resp); authService != nil {
+	if authService := t.isTokenDemand(resp); authService != nil {
 		resp.Body.Close()
 		resp, err = t.authAndRetry(authService, req)
 	}
@@ -103,22 +105,26 @@ func (authService *authService) Request(username, password string) (*http.Reques
 	return request, err
 }
 
-func isTokenDemand(resp *http.Response) *authService {
+func (t *TokenTransport) isTokenDemand(resp *http.Response) *authService {
 	if resp == nil {
 		return nil
 	}
 	if resp.StatusCode != http.StatusUnauthorized {
 		return nil
 	}
-	return parseOauthHeader(resp)
+	return t.parseOauthHeader(resp)
 }
 
-func parseOauthHeader(resp *http.Response) *authService {
+func (t *TokenTransport) parseOauthHeader(resp *http.Response) *authService {
 	challenges := parseAuthHeader(resp.Header)
 	for _, challenge := range challenges {
 		if challenge.Scheme == "bearer" {
+			realm := challenge.Parameters["realm"]
+			for old, new := range t.Replacements {
+				realm = strings.ReplaceAll(realm, old, new)
+			}
 			return &authService{
-				Realm:   challenge.Parameters["realm"],
+				Realm:   realm,
 				Service: challenge.Parameters["service"],
 				Scope:   challenge.Parameters["scope"],
 			}

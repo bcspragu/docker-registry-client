@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/schema2"
 	digest "github.com/opencontainers/go-digest"
 )
 
@@ -73,7 +74,13 @@ func (registry *Registry) BlobMetadata(repository string, digest digest.Digest) 
 	checkURL := registry.url("/v2/%s/blobs/%s", repository, digest)
 	registry.Logf("registry.blob.check url=%s repository=%s digest=%s", checkURL, repository, digest)
 
-	resp, err := registry.Client.Head(checkURL)
+	req, err := http.NewRequest("HEAD", checkURL, nil)
+	if err != nil {
+		return distribution.Descriptor{}, err
+	}
+
+	req.Header.Set("Accept", schema2.MediaTypeManifest)
+	resp, err := registry.Client.Do(req)
 	if resp != nil {
 		defer resp.Body.Close()
 	}
